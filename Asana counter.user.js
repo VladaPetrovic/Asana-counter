@@ -108,18 +108,94 @@ function getNumberFromTaskName(taskName) {
     }
 }
 
+function getDataFromRow(taskName) {
+    const regexp = /\[(\+)?(\d+)(D)?(-|\+)?(\d+)?(D)?\]/g;
+    const data = {
+        hours: 0,
+        moreHours: 0,
+        lessHours: 0
+    };
+
+    try {
+        const match = regexp.exec(taskName);
+
+        // extract values
+        [, preSign, hours, isDay, extraSign, extraHours, extraIsDay] = match;
+        data.hours = isDay ? hours * 8 : hours * 1;
+
+        if (preSign === "+") {
+            data.moreHours = isDay ? hours * 8 : hours * 1;
+        } else if (extraSign === "+") {
+            if (extraHours) {
+                data.moreHours = extraIsDay ? extraHours * 8 : extraHours * 1;
+            }
+        } else if (extraSign === "-") {
+            if (extraHours) {
+                data.lessHours = extraIsDay ? extraHours * 8 : extraHours * 1;
+            }
+        }
+
+        return data;
+    } catch (err) { }
+
+    return data;
+}
 
 function legacyMethodSetup() {
-    console.log('legacy setup');
     Mousetrap(document.body).bind(['command+k', 'ctrl+k'], function (e) {
-        console.log("The total count is:" + getTotalCount());
-        let dialog = $('<div>', {title: 'Total count'});
-        dialog.append($('<p>').append(getTotalCount()));
+        const summaryData = getSummaryFromSelectedTasks();
+        const progress = summaryData.countAllTasks > 0 ? Math.round(summaryData.countCompletedTasks / summaryData.countAllTasks * 100) : 0;
+        const difference = summaryData.totalHours - summaryData.plannedHours;
+
+        let dialog = $('<div>', {title: 'Summary'});
+        dialog.append($('<p>').append($('<strong>').append("Progress: "), progress, "%"));
+        dialog.append($('<p>').append($('<strong>').append("Completed tasks / All tasks: "), summaryData.countCompletedTasks, " / ", summaryData.countAllTasks));
+        dialog.append($('<hr>'));
+        dialog.append($('<p>').append($('<strong>').append("Planned hours: "), summaryData.plannedHours));
+        dialog.append($('<p>').append($('<strong>').append("Spent hours: "), summaryData.totalHours));
+        dialog.append($('<p>').append($('<strong>').append("+/- hours: "), difference > 0 ? "+" : "", difference));
         dialog.dialog();
-        //alert(getTotalCount());
+
         return false;
     });
+
     injectStyle();
+}
+
+function getSummaryFromSelectedTasks() {
+    const data = {
+        countAllTasks: 0,
+        countCompletedTasks: 0,
+        totalHours: 0,
+        plannedHours: 0
+    };
+
+    const relevantItems = $(".TaskList .ItemRow, #grid tr").not(".SectionRow");
+
+    relevantItems.each(function (i, row) {
+        const isSelected = $(row).is(".grid-row-selected,.ItemRow--highlighted,.ItemRow--focused");
+        if (!isSelected) {
+            return;
+        }
+
+        data.countAllTasks++;
+        const isCompleted = $(".TaskRowCompletionStatus-checkbox--complete", row).length > 0;
+        if (isCompleted) {
+            data.countCompletedTasks++;
+        }
+
+        const rowData = getDataFromRow($(row).find("textarea").val());
+        data.plannedHours += rowData.hours;
+        data.totalHours += rowData.hours;
+
+        if (rowData.moreHours > 0) {
+            data.totalHours += rowData.moreHours;
+        } else if (rowData.lessHours > 0) {
+            data.totalHours -= rowData.lessHours;
+        }
+    });
+
+    return data;
 }
 
 function getTotalCount() {
